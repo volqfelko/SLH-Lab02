@@ -52,13 +52,42 @@ pub fn create_token<T: Into<String>>(email: T, role: Role) -> Result<String> {
         .map_err(|e| anyhow!("Failed to create JWT token: {}", e))
 }
 
-pub fn verify_token(token: &str) -> Result<()> {
-    let validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+pub fn verify<T: Into<String>>(jwt: T, role: Role) -> Result<String> {
+    let token = jwt.into();
+    let secret_key = get_secret_key(&role)?;
+    let curr_time = Utc::now().timestamp() as usize;
 
-    decode::<Claims>(token, &DecodingKey::from_secret(SECRET_KEY), &validation)
-        .map(|_| ())
-        .map_err(|e| anyhow!("Failed to verify JWT token: {}", e))
+    let decoded_claim = decode::<Claims>(
+        &token,
+        &DecodingKey::from_secret(secret_key.as_ref()),
+        &Validation::default(),
+    )?;
+
+    validate_token_claims(&decoded_claim.claims, curr_time, role)?;
+
+    Ok(decoded_claim.claims.sub)
 }
+
+// Function to validate token claims.
+fn validate_token_claims(claims: &Claims, current_time: usize, expected_role: Role) -> Result<()> {
+    // Check if JWT was issued in the future.
+    if claims.iat > current_time {
+        return Err(anyhow!("JWT issued time is in the future"));
+    }
+
+    // Check if JWT has expired.
+    if claims.exp <= current_time {
+        return Err(anyhow!("JWT has expired"));
+    }
+
+    // Validate role in JWT.
+    if claims.role != expected_role {
+        return Err(anyhow!("Invalid role in JWT"));
+    }
+
+    Ok(())
+}
+
 
 fn get_secret_key(role: &Role) -> Result<String> {
     let key = match role {

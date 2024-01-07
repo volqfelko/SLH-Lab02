@@ -2,7 +2,7 @@ use axum::Json;
 use crate::backend::models::{NewUser, UserLogin, Token};
 use axum::http::StatusCode;
 use axum::response::{ErrorResponse, Html, IntoResponse, Redirect};
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
 use tower_sessions::Session;
@@ -16,30 +16,9 @@ use crate::database::email::Email;
 
 use crate::database::{token, user};
 use crate::utils::crypto::{verify_password, hash_password};
-
-pub async fn register(Json(user): Json<NewUser>) -> axum::response::Result<StatusCode> {
-    info!("Register new user");
-
-    // Extract and validate user inputs
-    let (email, password) = extract_and_validate_inputs(&user)?;
-
-    // Hash password and handle potential error
-    let hash = hash_password(&password)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to hash password"))?;
-
-    // Create user in the database and handle potential error
-    user::create(&email, &hash)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database operation failed"))?;
-
-    // Generate email token, add to the database, and handle potential error
-    let email_token = generate_and_add_email_token(&email)?;
-
-    // Send confirmation email and handle potential error
-    send_confirmation_email(&email, &email_token)?;
-
-    Ok(StatusCode::CREATED)
-}
-
+use crate::email::{get_verification_url, send_mail};
+use crate::utils::jwt::{create_token, Role, Claims};
+use crate::utils::input::validate_login;
 
 fn extract_and_validate_inputs(user: &NewUser) -> Result<(String, &str), ErrorResponse> {
     // Trim and validate email
@@ -67,32 +46,75 @@ fn send_confirmation_email(email: &str, email_token: &str) -> Result<(), (Status
 
     Ok(())
 }
-pub async fn verify(Path(token): Path<String>) -> Redirect {
-    info!("Verify account");
 
-    // TODO : Flag user's account as verified (with the given token)
-    let verification: bool = false;
+pub async fn register(Json(user): Json<NewUser>) -> axum::response::Result<StatusCode> {
+    info!("Register new user");
 
-    match verification {
-        true => Redirect::to("/?verify=ok"),
-        _ => Redirect::to("/?verify=failed"),
-    }
+    // Extract and validate user inputs
+    let (email, password) = extract_and_validate_inputs(&user)?;
+
+    // Hash password and handle potential error
+    let hash = hash_password(&password)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to hash password"))?;
+
+    // Create user in the database and handle potential error
+    user::create(&email, &hash)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database operation failed"))?;
+
+    // Generate email token, add to the database, and handle potential error
+    let email_token = generate_and_add_email_token(&email)?;
+
+    // Send confirmation email and handle potential error
+    send_confirmation_email(&email, &email_token)?;
+
+    Ok(StatusCode::CREATED)
 }
 
+
+pub async fn verify(Path(token): Path<String>) -> Redirect {
+    let result = match token::consume(token) {
+        Ok(email) => {
+            if user::verify(&email).is_ok() {
+                info!("User successfully verified: {}", email);
+                Redirect::to("/?verify=ok")
+            } else {
+                warn!("User failed to verify");
+                Redirect::to("/?verify=failed")
+            }
+        }
+        Err(e) => {
+            warn!("Failed to consume token: {}", e);
+            Redirect::to("/?verify=failed")
+        }
+    };
+
+    result
+}
 
 pub async fn login(Json(user_login): Json<UserLogin>) -> axum::response::Result<Json<Token>> {
     info!("Login user");
 
-    return Err((StatusCode::INTERNAL_SERVER_ERROR, "Function 'login' not implemented").into());
+    // Trim and check if user is verified
+    let user_email = user_login.email.trim().to_ascii_lowercase();
+    if !user::verified(&user_email).unwrap_or(false) {
+        warn!("User not verified: {}", user_email);
+        return Err(ErrorResponse::from((StatusCode::UNAUTHORIZED, "User not verified")));
+    }
 
-    // TODO : Login user
-    // TODO : Generate refresh JWT
+    // Retrieve user and verify password, handle errors
+    let database_user = user::get(&user_email)
+        .ok_or((StatusCode::UNAUTHORIZED, "Invalid email or password"))?;
+    if !verify_password(&user_login.password, &database_user.hash) {
+        warn!("Invalid password for user: {}", user_email);
+        return Err(ErrorResponse::from((StatusCode::UNAUTHORIZED, "Invalid email or password")));
+    }
 
-    let jwt: String;
-    Ok(Json::from(Token { token: jwt }))
+    // Create JWT and handle errors
+    let access_token = create_token(&user_email, Role::Refresh)
+        .map_err(|_| ErrorResponse::from((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create JWT")))?;
+
+    Ok(Json(Token { token: access_token }))
 }
-
-
 
 /// Serve index page
 /// If the user is logged, add a anti-CSRF token to the password change form
