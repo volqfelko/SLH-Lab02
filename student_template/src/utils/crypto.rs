@@ -4,8 +4,8 @@ use argon2::{
     password_hash::Error as ArgonError,
 };
 
-// Hashes a password using the Argon2 algorithm.
-// Returns the hashed password or an error if hashing fails.
+// This function applies the Argon2 algorithm to securely hash a given password
+// and returns the hashed password string or an error in case the hashing process encounters an issue.
 pub fn hash_password(password: &str) -> Result<String, ArgonError> {
     let salt = SaltString::generate(&mut OsRng);
 
@@ -14,8 +14,8 @@ pub fn hash_password(password: &str) -> Result<String, ArgonError> {
     Ok(argon2.hash_password(password.as_bytes(), &salt)?.to_string())
 }
 
-// Verifies a password against a given hash.
-// Returns true if the password matches the hash, false otherwise.
+// Compares a plain text password with a hashed password using the Argon2 algorithm.
+// It evaluates to true if the plain password, once hashed, matches the given hash; otherwise, it returns false.
 pub fn verify_password(password: &str, hash: &str) -> bool {
     let argon2 = Argon2::default();
 

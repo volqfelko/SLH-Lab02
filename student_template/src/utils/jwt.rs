@@ -4,7 +4,6 @@ use jsonwebtoken::{decode, DecodingKey, encode, EncodingKey, Header, Validation}
 use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
 
-use crate::consts::{ACCESS_TOKEN_EXPIRATION_HOURS, REFRESH_TOKEN_EXPIRATION_DAYS};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum Role {
@@ -23,8 +22,8 @@ pub(crate) struct Claims {
 impl Claims {
     pub fn duration(role: Role) -> Duration {
         match role {
-            Role::Access => Duration::hours(ACCESS_TOKEN_EXPIRATION_HOURS),
-            Role::Refresh => Duration::days(REFRESH_TOKEN_EXPIRATION_DAYS),
+            Role::Access => Duration::hours(1),
+            Role::Refresh => Duration::days(5),
         }
     }
 
@@ -39,6 +38,7 @@ impl Claims {
     }
 }
 
+// Function to create a JWT token based on user email and role.
 pub fn create_token<T: Into<String>>(email: T, role: Role) -> Result<String> {
     let duration = Claims::duration(role);
     let claims = Claims::new(email, role, duration);
@@ -52,6 +52,7 @@ pub fn create_token<T: Into<String>>(email: T, role: Role) -> Result<String> {
         .map_err(|e| anyhow!("Failed to create JWT token: {}", e))
 }
 
+// Function to verify a JWT token and return the subject (email) if valid.
 pub fn verify<T: Into<String>>(jwt: T, role: Role) -> Result<String> {
     let token = jwt.into();
     let secret_key = get_secret_key(&role)?;
@@ -68,19 +69,16 @@ pub fn verify<T: Into<String>>(jwt: T, role: Role) -> Result<String> {
     Ok(decoded_claim.claims.sub)
 }
 
-// Function to validate token claims.
+// Validates the JWT token claims including issue time, expiration, and role.
 fn validate_token_claims(claims: &Claims, current_time: usize, expected_role: Role) -> Result<()> {
-    // Check if JWT was issued in the future.
     if claims.iat > current_time {
         return Err(anyhow!("JWT issued time is in the future"));
     }
 
-    // Check if JWT has expired.
     if claims.exp <= current_time {
         return Err(anyhow!("JWT has expired"));
     }
 
-    // Validate role in JWT.
     if claims.role != expected_role {
         return Err(anyhow!("Invalid role in JWT"));
     }
@@ -89,6 +87,7 @@ fn validate_token_claims(claims: &Claims, current_time: usize, expected_role: Ro
 }
 
 
+// Retrieves the secret key for a specific role from the environment variables.
 fn get_secret_key(role: &Role) -> Result<String> {
     let key = match role {
         Role::Access => "ACCESS_SECRET",

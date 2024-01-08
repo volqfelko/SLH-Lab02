@@ -5,6 +5,7 @@ mod email;
 mod consts;
 
 use std::net::SocketAddr;
+use dotenv::dotenv;
 use handlebars::Handlebars;
 use log::info;
 use once_cell::sync::Lazy;
@@ -29,6 +30,7 @@ async fn main() {
     database::token::load().ok();
     database::email::load().ok();
 
+    dotenv().ok();
     // Setup the endpoints
     let app = backend::router::get_router();
 

@@ -18,31 +18,31 @@ use crate::database::{token, user};
 use crate::utils::crypto::{verify_password, hash_password};
 use crate::email::{get_verification_url, send_mail};
 use crate::utils::jwt::{create_token, Role, Claims};
-use crate::utils::input::validate_login;
+use crate::utils::input::is_inputs_valid;
 
-fn extract_and_validate_inputs(user: &NewUser) -> Result<(String, &str), ErrorResponse> {
-    // Trim and validate email
-    let email = user.email.trim().to_ascii_lowercase();
-    validate_login(&email, &user.password, &user.password2)?;
-    Ok((email, &user.password))
+fn process_new_user_inputs(new_user: &NewUser) -> Result<(String, &str), ErrorResponse> {
+    // Process and check new user's email and password for validity
+    let processed_email = new_user.email.trim().to_lowercase();
+    is_inputs_valid(&processed_email, &new_user.password, &new_user.password2)?;
+    Ok((processed_email, &new_user.password))
 }
 
-fn generate_and_add_email_token(email: &str) -> Result<String, (StatusCode, &'static str)> {
-    // Generate email token
-    let email_token = Uuid::new_v4().to_string();
+fn create_and_store_email_token(user_email: &str) -> Result<String, (StatusCode, &'static str)> {
+    // Create a unique token for the email
+    let token_for_email = Uuid::new_v4().to_string();
 
-    // Add email token to the database and handle potential error
-    let duration = Claims::duration(Role::Access).to_std().unwrap();
-    token::add(&email, &email_token, duration)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database operation failed"))?;
+    // Store the newly created email token in the database
+    let token_lifetime = Claims::duration(Role::Access).to_std().unwrap();
+    token::add(user_email, &token_for_email, token_lifetime)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Error in database transaction"))?;
 
-    Ok(email_token)
+    Ok(token_for_email)
 }
 
-fn send_confirmation_email(email: &str, email_token: &str) -> Result<(), (StatusCode, &'static str)> {
-    // Send confirmation email and handle potential error
-    send_mail(email, "Confirm your account", &get_verification_url(email_token))
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to send confirmation email"))?;
+fn send_confirmation_email(user_email: &str, token: &str) -> Result<(), (StatusCode, &'static str)> {
+    // Attempt to dispatch a verification email and manage any errors
+    send_mail(user_email, "Verify Your Email Address", &get_verification_url(token))
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Error sending verification email"))?;
 
     Ok(())
 }
@@ -50,23 +50,24 @@ fn send_confirmation_email(email: &str, email_token: &str) -> Result<(), (Status
 pub async fn register(Json(user): Json<NewUser>) -> axum::response::Result<StatusCode> {
     info!("Register new user");
 
-    // Extract and validate user inputs
-    let (email, password) = extract_and_validate_inputs(&user)?;
+    // Process user input for email and password
+    let (email, password) = process_new_user_inputs(&user)?;
 
-    // Hash password and handle potential error
+    // Encrypt the user password, return error if encryption fails
     let hash = hash_password(&password)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to hash password"))?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Password encryption error"))?;
 
-    // Create user in the database and handle potential error
+    // Add new user to database, return error if creation fails
     user::create(&email, &hash)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database operation failed"))?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "User creation in database failed"))?;
 
-    // Generate email token, add to the database, and handle potential error
-    let email_token = generate_and_add_email_token(&email)?;
+    // Generate and store a token for email verification, return error if this fails
+    let email_token = create_and_store_email_token(&email)?;
 
-    // Send confirmation email and handle potential error
+    // Dispatch an email for account confirmation, return error if sending fails
     send_confirmation_email(&email, &email_token)?;
 
+    // Return a status indicating successful creation
     Ok(StatusCode::CREATED)
 }
 
@@ -94,14 +95,14 @@ pub async fn verify(Path(token): Path<String>) -> Redirect {
 pub async fn login(Json(user_login): Json<UserLogin>) -> axum::response::Result<Json<Token>> {
     info!("Login user");
 
-    // Trim and check if user is verified
+    // Normalize email and check user's verification status
     let user_email = user_login.email.trim().to_ascii_lowercase();
     if !user::verified(&user_email).unwrap_or(false) {
         warn!("User not verified: {}", user_email);
-        return Err(ErrorResponse::from((StatusCode::UNAUTHORIZED, "User not verified")));
+        return Err(ErrorResponse::from((StatusCode::UNAUTHORIZED, "Account not verified")));
     }
 
-    // Retrieve user and verify password, handle errors
+    // Fetch user from database and authenticate, returning error for invalid credentials
     let database_user = user::get(&user_email)
         .ok_or((StatusCode::UNAUTHORIZED, "Invalid email or password"))?;
     if !verify_password(&user_login.password, &database_user.hash) {
@@ -109,9 +110,9 @@ pub async fn login(Json(user_login): Json<UserLogin>) -> axum::response::Result<
         return Err(ErrorResponse::from((StatusCode::UNAUTHORIZED, "Invalid email or password")));
     }
 
-    // Create JWT and handle errors
+    // Generate a new JWT for the user, reporting error if token generation fails
     let access_token = create_token(&user_email, Role::Refresh)
-        .map_err(|_| ErrorResponse::from((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create JWT")))?;
+        .map_err(|_| ErrorResponse::from((StatusCode::INTERNAL_SERVER_ERROR, "Error generating access token")))?;
 
     Ok(Json(Token { token: access_token }))
 }
