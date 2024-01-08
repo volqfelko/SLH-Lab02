@@ -27,8 +27,10 @@ tower = "0.4.13"
 
 argon2 = "0.5.2"
 rand = "0.8.5"
-chrono = { version = "0.4.31", features = [] }
+chrono = "0.4.31"
 jsonwebtoken = "9.2.0"
 regex = "1.10.2"
 zxcvbn = "2.2.2"
 dotenv = "0.15.0"
+serial_test = "2.0.0"
+rstest = "0.18.2"

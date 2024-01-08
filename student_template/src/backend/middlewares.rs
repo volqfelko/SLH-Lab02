@@ -31,7 +31,7 @@ impl<S> FromRequestParts<S> for RefreshUser
             .ok_or(StatusCode::BAD_REQUEST)?;
 
         // Verify JWT and retrieve email
-        let email = jwt::verify(jwt, Role::Refresh)
+        let email = jwt::verify_token(jwt, Role::Refresh)
             .or(Err(StatusCode::BAD_REQUEST))?;
 
         trace!("Refresh JWT validated from headers");
@@ -61,7 +61,7 @@ impl<S> FromRequestParts<S> for AccessUser
         let jwt = jwt_cookie.value();
 
         // Validate cookie
-        let email = jwt::verify(jwt, Role::Access)
+        let email = jwt::verify_token(jwt, Role::Access)
             .or(Err(StatusCode::BAD_REQUEST))?;
 
         // Return validated email

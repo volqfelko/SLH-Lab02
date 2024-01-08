@@ -1,8 +1,12 @@
 #[cfg(test)]
 mod tests {
+    use std::env;
     use http::StatusCode;
     use crate::utils::crypto::{hash_password, verify_password};
     use crate::utils::input::{is_email_valid, is_inputs_valid, is_password_strong};
+    use crate::utils::jwt::{create_token, Role, verify_token};
+    use rstest::rstest;
+    use serial_test::serial;
 
     // Verify that hashing the same password multiple times produces different results
     #[test]
@@ -142,4 +146,92 @@ mod tests {
             assert_eq!(is_inputs_valid(email, pass1, pass2), Err((StatusCode::BAD_REQUEST, message)), "Test case with email '{email}' failed");
         }
     }
+
+    fn set_environment_variables() {
+        env::set_var("ACCESS_SECRET", "ultra_secret_test_access");
+        env::set_var("REFRESH_SECRET", "ultra_secret_test_refresh");
+    }
+
+    fn remove_environment_variables() {
+        env::remove_var("ACCESS_SECRET");
+        env::remove_var("REFRESH_SECRET");
+    }
+
+    #[rstest]
+    #[serial]
+    fn jwt_verification_with_invalid_secret() {
+        set_environment_variables();
+
+        let token = create_token("example@example.com", Role::Access).unwrap();
+
+        // Alter the secret to an invalid one
+        env::set_var("ACCESS_SECRET", "invalid_secret");
+        env::set_var("REFRESH_SECRET", "invalid_secret");
+
+        assert!(verify_token(&token, Role::Access).is_err(), "Token verification should fail with an incorrect secret");
+
+        remove_environment_variables();
+    }
+
+    #[rstest]
+    #[serial]
+    fn jwt_creation_and_validation() {
+        set_environment_variables();
+
+        for role in &[Role::Access, Role::Refresh] {
+            let token = create_token("example@example.com", *role).unwrap();
+            assert!(verify_token(&token, *role).is_ok(), "Token should be valid for the specified role");
+        }
+
+        remove_environment_variables();
+    }
+
+/* CHANGER LA LIGNE 26 dans jwt.rs pour set le token a moins de 10 secondes pour qu'il soit expiré
+    #[rstest]
+    #[serial]
+    fn jwt_verification_for_expired_token() {
+        set_environment_variables();
+
+        let expired_token = create_token("expired@example.com", Role::Access).unwrap();
+        std::thread::sleep(time::Duration::from_secs(10));
+
+        assert!(verify_token(&expired_token, Role::Access).is_err(), "Token should be invalid after expiration");
+
+        remove_environment_variables();
+    }
+*/
+    #[rstest]
+    #[serial]
+    fn jwt_verification_with_invalid_role() {
+        set_environment_variables();
+
+        let token = create_token("role@example.com", Role::Access).unwrap();
+        assert!(verify_token(&token, Role::Refresh).is_err(), "Token should not be valid for an incorrect role");
+
+        remove_environment_variables();
+    }
+
+    #[rstest]
+    #[serial]
+    fn jwt_verification_of_malformed_token() {
+        set_environment_variables();
+
+        let malformed_token = "not.a.valid.token";
+        assert!(verify_token(malformed_token, Role::Access).is_err(), "Malformed token should not pass verification");
+
+        remove_environment_variables();
+    }
+
+    #[rstest]
+    #[serial]
+    fn jwt_creation_without_secret_keys() {
+        remove_environment_variables();
+
+        let access_token_result = create_token("example@example.com", Role::Access);
+        assert!(access_token_result.is_err(), "Token creation should not succeed without secret keys");
+
+        let refresh_token_result = create_token("example@example.com", Role::Refresh);
+        assert!(refresh_token_result.is_err(), "Token creation should not succeed without secret keys");
+    }
+
 }

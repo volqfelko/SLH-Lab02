@@ -3,7 +3,8 @@ use anyhow::{anyhow, Result};
 use jsonwebtoken::{decode, DecodingKey, encode, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
-
+use rstest::rstest;
+use serial_test::serial;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum Role {
@@ -53,7 +54,7 @@ pub fn create_token<T: Into<String>>(email: T, role: Role) -> Result<String> {
 }
 
 // Function to verify a JWT token and return the subject (email) if valid.
-pub fn verify<T: Into<String>>(jwt: T, role: Role) -> Result<String> {
+pub fn verify_token<T: Into<String>>(jwt: T, role: Role) -> Result<String> {
     let token = jwt.into();
     let secret_key = get_secret_key(&role)?;
     let curr_time = Utc::now().timestamp() as usize;
