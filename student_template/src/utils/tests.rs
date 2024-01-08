@@ -3,7 +3,7 @@ mod tests {
     use std::env;
     use http::StatusCode;
     use crate::utils::crypto::{hash_password, verify_password};
-    use crate::utils::input::{is_email_valid, is_inputs_valid, is_password_strong};
+    use crate::utils::validation::{is_email_valid, is_inputs_valid, is_password_strong};
     use crate::utils::jwt::{create_token, Role, verify_token};
     use rstest::rstest;
     use serial_test::serial;

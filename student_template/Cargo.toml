@@ -24,7 +24,6 @@ serde_with = "3.4.0"
 serde_millis = "0.1.1"
 tower-sessions = "0.7.0"
 tower = "0.4.13"
-
 argon2 = "0.5.2"
 rand = "0.8.5"
 chrono = "0.4.31"

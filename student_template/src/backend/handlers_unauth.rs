@@ -18,7 +18,7 @@ use crate::database::{token, user};
 use crate::utils::crypto::{verify_password, hash_password};
 use crate::email::{get_verification_url, send_mail};
 use crate::utils::jwt::{create_token, Role, Claims};
-use crate::utils::input::is_inputs_valid;
+use crate::utils::validation::is_inputs_valid;
 
 fn process_new_user_inputs(new_user: &NewUser) -> Result<(String, &str), ErrorResponse> {
     // Process and check new user's email and password for validity

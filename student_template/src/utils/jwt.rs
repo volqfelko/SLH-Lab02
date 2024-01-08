@@ -3,8 +3,6 @@ use anyhow::{anyhow, Result};
 use jsonwebtoken::{decode, DecodingKey, encode, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use chrono::{Utc, Duration};
-use rstest::rstest;
-use serial_test::serial;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum Role {

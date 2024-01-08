@@ -1,4 +1,4 @@
 pub mod jwt;
 pub(crate) mod crypto;
-pub(crate) mod input;
+pub(crate) mod validation;
 mod tests;

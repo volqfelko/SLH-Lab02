@@ -7,7 +7,7 @@ use crate::backend::middlewares::AccessUser;
 use crate::backend::models::ChangePassword;
 use crate::database::user;
 use crate::utils::crypto::{hash_password, verify_password};
-use crate::utils::input::is_inputs_valid;
+use crate::utils::validation::is_inputs_valid;
 
 pub async fn change_password (
     session: Session,
